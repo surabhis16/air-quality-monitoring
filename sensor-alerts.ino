@@ -1,6 +1,8 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include "DHT.h"
+#include <WiFi.h>
+#include <ThingSpeak.h>
 
 #define DHTPIN 2
 #define DHTTYPE DHT22
@@ -14,6 +16,13 @@ const int red_led = 10;
 const int buzzer = 11;
 int aqi_ppm = 0;
 
+const char* ssid = "";  // WiFi SSID
+const char* password = "";  // WiFi password
+WiFiClient client;
+
+unsigned long myChannelNumber = CHANNEL_ID;  // ThingSpeak channel ID
+const char * myWriteAPIKey = "";  //  ThingSpeak API key
+
 void setup() {
   pinMode(mq135_aqi_sensor, INPUT);
   pinMode(green_led, OUTPUT);
@@ -24,12 +33,18 @@ void setup() {
   digitalWrite(red_led, LOW);
   digitalWrite(buzzer, LOW);
 
-  Serial.begin(9600);
   lcd.begin(16, 2);
+  Serial.begin(115200);
 
-  Serial.println("AQI Alert System");
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  ThingSpeak.begin(client);
+  
   lcd.setCursor(0, 0);
-  lcd.print("AQI Alert System");
+  lcd.print("Connecting WiFi...");
   delay(500);
 }
 
@@ -37,22 +52,13 @@ void loop() {
   float humi = dht.readHumidity();
   float tempc = dht.readTemperature();
   
-  Serial.print("Humidity: ");
-  Serial.print(humi);
-  Serial.print("% Temperature: ");
-  Serial.print(tempc);
-  Serial.println("°C");
-
   aqi_ppm = analogRead(mq135_aqi_sensor);
-
-  Serial.print("Air Quality: ");
-  Serial.println(aqi_ppm);
-
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Air Quality: ");
   lcd.print(aqi_ppm);
 
+  // Local Alerts based on AQI
   if ((aqi_ppm >= 0) && (aqi_ppm <= 50)) {
     lcd.setCursor(0, 1);
     lcd.print("AQI Good");
@@ -85,8 +91,6 @@ void loop() {
     lcd.setCursor(0, 1);
     lcd.print("AQI V. Unhealthy");
     Serial.println("AQI V. Unhealthy");
-    Serial.println("Temperature: 23 degrees");
-    Serial.println("Humidity:82%");
     digitalWrite(green_led, LOW);
     digitalWrite(red_led, HIGH);
     digitalWrite(buzzer, HIGH);
@@ -98,5 +102,13 @@ void loop() {
     digitalWrite(red_led, HIGH);
     digitalWrite(buzzer, HIGH);
   }
-  delay(1000);
+
+  // Update data to ThingSpeak
+  ThingSpeak.setField(1, aqi_ppm);  // Field 1 - AQI
+  ThingSpeak.setField(2, tempc);    // Field 2 - Temperature
+  ThingSpeak.setField(3, humi);     // Field 3 - Humidity
+
+  ThingSpeak.writeFields(myChannelNumber, myWriteAPIKey);
+  
+  delay(1000);  
 }
